@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <!-- スマホでの拡大縮小を禁止し、アプリのように表示する設定 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- Webアプリ化（PWA）のためのマニフェスト読み込み -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title>インベーダーゲーム</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #111; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            overflow: hidden; /* スクロールを禁止 */
+            touch-action: none; /* デフォルトのタッチアクションを無効化 */
+        }
+        canvas { 
+            background: #000; 
+            box-shadow: 0 0 10px rgba(255,255,255,0.2); 
+            max-width: 100%;
+            max-height: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="320" height="480"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // ゲームステータス
+    let score = 0;
+    let isGameOver = false;
+    
+    // プレイヤー設定
+    let player = { x: 140, y: 430, w: 40, h: 20, speed: 5 };
+    let bullets = [];
+    
+    // 敵設定
+    let enemies = [];
+    let enemyDir = 1;
+    let enemySpeed = 1;
+
+    function initEnemies() {
+        enemies = [];
+        for(let r=0; r<4; r++) {
+            for(let c=0; c<6; c++) {
+                enemies.push({ x: 30 + c*40, y: 40 + r*30, w: 25, h: 20, alive: true });
+            }
+        }
+    }
+    initEnemies();
+
+    // 操作設定（PC用：矢印キー）
+    let keys = {};
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    // 操作設定（スマホ用：スワイプ）
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const touchX = e.touches[0].clientX - rect.left;
+        player.x = touchX - player.w / 2;
+        // 画面外に出ないように制限
+        player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
+    });
+
+    // 弾の発射（スマホ・PC共通で自動連射）
+    setInterval(() => {
+        if(!isGameOver) {
+            bullets.push({ x: player.x + player.w/2 - 2, y: player.y, w: 4, h: 10, speed: -6 });
+        }
+    }, 400);
+
+    // ゲームループ（更新処理）
+    function update() {
+        if(isGameOver) return;
+
+        // プレイヤーの移動（PC用）
+        if(keys['ArrowLeft'] && player.x > 0) player.x -= player.speed;
+        if(keys['ArrowRight'] && player.x + player.w < canvas.width) player.x += player.speed;
+
+        // 弾の移動
+        bullets.forEach((b, i) => {
+            b.y += b.speed;
+            if(b.y < 0) bullets.splice(i, 1);
+        });
+
+        // 敵の移動
+        let moveDown = false;
+        enemies.forEach(e => {
+            if(!e.alive) return;
+            e.x += enemySpeed * enemyDir;
+            if(e.x <= 0 || e.x + e.w >= canvas.width) moveDown = true;
+        });
+
+        if(moveDown) {
+            enemyDir *= -1;
+            enemies.forEach(e => { 
+                if(e.alive) {
+                    e.y += 20; 
+                    if(e.y + e.h > player.y) isGameOver = true; 
+                }
+            });
+            enemySpeed += 0.2; // 少しずつ速くなる
+        }
+
+        // 衝突判定（弾と敵）
+        bullets.forEach((b, bi) => {
+            enemies.forEach((e, ei) => {
+                if(e.alive && b.x < e.x + e.w && b.x + b.w > e.x && b.y < e.y + e.h && b.y + b.h > e.y) {
+                    e.alive = false;
+                    bullets.splice(bi, 1);
+                    score += 10;
+                }
+            });
+        });
+
+        // 全滅させたら次のウェーブへ
+        if(enemies.every(e => !e.alive)) {
+            initEnemies();
+            enemySpeed += 0.5;
+        }
+    }
+
+    // 描画処理
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if(isGameOver) {
+            ctx.fillStyle = 'red';
+            ctx.font = '30px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2);
+            ctx.fillStyle = 'white';
+            ctx.font = '16px sans-serif';
+            ctx.fillText('タップしてリトライ', canvas.width/2, canvas.height/2 + 40);
+            return;
+        }
+
+        // プレイヤー描画
+        ctx.fillStyle = '#0f0';
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+
+        // 弾描画
+        ctx.fillStyle = '#ff0';
+        bullets.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+
+        // 敵描画
+        ctx.fillStyle = '#f0f';
+        enemies.forEach(e => { if(e.alive) ctx.fillRect(e.x, e.y, e.w, e.h); });
+
+        // スコア描画
+        ctx.fillStyle = 'white';
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('Score: ' + score, 10, 25);
+    }
+
+    // リトライ処理
+    canvas.addEventListener('mousedown', resetGame);
+    canvas.addEventListener('touchstart', resetGame);
+    function resetGame() {
+        if(isGameOver) {
+            score = 0;
+            enemySpeed = 1;
+            initEnemies();
+            isGameOver = false;
+        }
+    }
+
+    function loop() {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+    }
+    loop();
+</script>
+</body>
+</html>
